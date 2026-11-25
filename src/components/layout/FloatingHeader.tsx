@@ -16,6 +16,9 @@ import {
   ChevronDown,
   Database,
   FileJson,
+  Users,
+  RefreshCw,
+  Check,
 } from 'lucide-react';
 import { ActiveTab, CURRENCIES, CurrencyCode } from '../../types/finance';
 import { useFinance } from '../../context/FinanceContext';
@@ -45,9 +48,15 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
   const {
     entries,
     currency,
+    members,
+    activeMember,
     syncState,
     dbDriver,
+    lastSyncedAt,
     setCurrency,
+    setActiveMember,
+    updateMembers,
+    syncNow,
     openAddModal,
     resetDemoData,
     clearAllData,
@@ -56,9 +65,20 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [currencyOpen, setCurrencyOpen] = useState(false);
+  const [memberOpen, setMemberOpen] = useState(false);
+  const [editingNames, setEditingNames] = useState(false);
+  const [person1Draft, setPerson1Draft] = useState(members[0] || 'Person 1');
+  const [person2Draft, setPerson2Draft] = useState(members[1] || 'Person 2');
+
   const menuRef = useRef<HTMLDivElement>(null);
   const currRef = useRef<HTMLDivElement>(null);
+  const memberRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setPerson1Draft(members[0] || 'Person 1');
+    setPerson2Draft(members[1] || 'Person 2');
+  }, [members]);
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -67,6 +87,10 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
       }
       if (currRef.current && !currRef.current.contains(e.target as Node)) {
         setCurrencyOpen(false);
+      }
+      if (memberRef.current && !memberRef.current.contains(e.target as Node)) {
+        setMemberOpen(false);
+        setEditingNames(false);
       }
     };
     document.addEventListener('mousedown', onDocClick);
@@ -84,36 +108,45 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
         await importEntries(list);
       }
     } catch {
-      // handled cleanly by context toast if invalid
+      // handled cleanly by context
     } finally {
       e.target.value = '';
       setMenuOpen(false);
     }
   };
 
+  const handleSaveMemberNames = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const next = [person1Draft.trim(), person2Draft.trim()].filter(Boolean);
+    if (next.length > 0) {
+      await updateMembers(next);
+    }
+    setEditingNames(false);
+  };
+
   const syncBadge = (() => {
     if (syncState === 'saving' || syncState === 'loading') {
       return {
         dot: 'bg-amber-400 animate-pulse',
-        text: syncState === 'loading' ? 'Connecting...' : 'Saving...',
+        text: syncState === 'loading' ? 'Connecting...' : 'Syncing...',
         cls: 'bg-amber-50 text-amber-700 border-amber-200/80',
-        title: 'Syncing with database',
+        title: 'Syncing with shared database',
       };
     }
     if (syncState === 'local') {
       return {
         dot: 'bg-sky-500',
-        text: 'Local Saved',
+        text: 'Local Only',
         cls: 'bg-sky-50 text-sky-700 border-sky-200/80',
         title:
-          'Saved in your browser. Add Neon/Supabase Postgres in Vercel Storage to sync across devices.',
+          'Saved only on this device. Connect Neon Postgres in Vercel Storage to share live across 2 devices.',
       };
     }
     return {
       dot: 'bg-emerald-500',
-      text: dbDriver === 'postgres' ? 'PostgreSQL' : 'SQLite DB',
+      text: dbDriver === 'postgres' ? 'Live Cloud DB' : 'Live SQLite',
       cls: 'bg-emerald-50 text-emerald-700 border-emerald-200/80',
-      title: 'Live cloud/server database persistence active',
+      title: `Connected & auto-syncing every 8s${lastSyncedAt ? ` · Last sync ${lastSyncedAt}` : ''}`,
     };
   })();
 
@@ -123,10 +156,10 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
         initial={{ opacity: 0, y: -14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: 'spring', stiffness: 340, damping: 28 }}
-        className="glass-header flex items-center justify-between gap-3 rounded-2xl px-3 py-2.5 sm:px-4"
+        className="glass-header flex items-center justify-between gap-2.5 rounded-2xl px-3 py-2.5 sm:px-4"
       >
-        {/* Brand Identity + Live DB Sync Pill */}
-        <div className="flex items-center gap-2.5">
+        {/* Brand Identity + Live Sync Badge */}
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => onTabChange('overview')}
@@ -156,14 +189,14 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
                 </span>
               </div>
               <p className="text-[11px] font-medium text-slate-500 -mt-0.5">
-                Wealth &amp; P&amp;L Studio
+                Shared Wealth &amp; P&amp;L
               </p>
             </div>
           </button>
         </div>
 
         {/* Center Spring-Animated Pill Navigation */}
-        <nav className="hidden lg:flex items-center gap-1 rounded-2xl border border-slate-200/70 bg-slate-100/70 p-1">
+        <nav className="hidden xl:flex items-center gap-1 rounded-2xl border border-slate-200/70 bg-slate-100/70 p-1">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = activeTab === item.id;
@@ -199,7 +232,114 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
         </nav>
 
         {/* Right Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Active Member Switcher (For 2 People Sharing Dashboard) */}
+          <div className="relative" ref={memberRef}>
+            <button
+              type="button"
+              onClick={() => setMemberOpen((o) => !o)}
+              title="Choose who is recording entries on this device"
+              className="flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white/90 px-2.5 py-2 text-xs font-bold text-slate-700 hover:border-emerald-300 hover:text-slate-900 transition-colors cursor-pointer"
+            >
+              <Users className="h-3.5 w-3.5 text-emerald-600" />
+              <span className="max-w-[78px] truncate hidden md:inline">
+                {activeMember}
+              </span>
+              <ChevronDown className="h-3 w-3 text-slate-400" />
+            </button>
+
+            <AnimatePresence>
+              {memberOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 6, scale: 0.96 }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+                  className="absolute right-0 mt-2 w-64 rounded-2xl border border-slate-200/90 bg-white p-2.5 shadow-xl shadow-slate-900/10"
+                >
+                  <p className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Active User on This Device
+                  </p>
+                  <div className="mt-1 space-y-1">
+                    {members.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => {
+                          setActiveMember(m);
+                          setMemberOpen(false);
+                        }}
+                        className={`flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-xs font-semibold transition-colors cursor-pointer ${
+                          activeMember === m
+                            ? 'bg-emerald-50 text-emerald-800'
+                            : 'text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span>{m}</span>
+                        {activeMember === m && (
+                          <Check className="h-3.5 w-3.5 text-emerald-600" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="my-2 border-t border-slate-100" />
+
+                  {!editingNames ? (
+                    <button
+                      type="button"
+                      onClick={() => setEditingNames(true)}
+                      className="w-full rounded-xl bg-slate-50 px-2.5 py-2 text-left text-xs font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors cursor-pointer"
+                    >
+                      Rename Partner Names…
+                    </button>
+                  ) : (
+                    <form onSubmit={handleSaveMemberNames} className="space-y-2">
+                      <input
+                        type="text"
+                        value={person1Draft}
+                        onChange={(e) => setPerson1Draft(e.target.value)}
+                        placeholder="Person 1 name"
+                        className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-900 focus:border-emerald-400 focus:outline-none"
+                      />
+                      <input
+                        type="text"
+                        value={person2Draft}
+                        onChange={(e) => setPerson2Draft(e.target.value)}
+                        placeholder="Person 2 name"
+                        className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-900 focus:border-emerald-400 focus:outline-none"
+                      />
+                      <button
+                        type="submit"
+                        className="w-full rounded-lg bg-emerald-600 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 cursor-pointer"
+                      >
+                        Save Shared Names
+                      </button>
+                    </form>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Live Sync Refresh Button (when connected to DB) */}
+          {syncState !== 'local' && (
+            <button
+              type="button"
+              onClick={() => syncNow(false)}
+              title="Sync now with shared database"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200/80 bg-white/90 text-slate-600 hover:border-emerald-300 hover:text-emerald-600 transition-colors cursor-pointer"
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${
+                  syncState === 'saving' || syncState === 'loading'
+                    ? 'animate-spin text-emerald-600'
+                    : ''
+                }`}
+              />
+            </button>
+          )}
+
           {/* Currency Switcher */}
           <div className="relative" ref={currRef}>
             <button
@@ -208,7 +348,7 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
               className="flex items-center gap-1 rounded-xl border border-slate-200/80 bg-white/90 px-2.5 py-2 text-xs font-bold text-slate-700 hover:border-emerald-300 hover:text-slate-900 transition-colors cursor-pointer"
             >
               <span className="text-emerald-600">{CURRENCIES[currency].symbol}</span>
-              <span>{currency}</span>
+              <span className="hidden sm:inline">{currency}</span>
               <ChevronDown className="h-3 w-3 text-slate-400" />
             </button>
             <AnimatePresence>
@@ -269,8 +409,18 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 6, scale: 0.96 }}
                   transition={{ type: 'spring', stiffness: 420, damping: 30 }}
-                  className="absolute right-0 mt-2 w-60 rounded-2xl border border-slate-200/90 bg-white p-2 shadow-xl shadow-slate-900/10"
+                  className="absolute right-0 mt-2 w-64 rounded-2xl border border-slate-200/90 bg-white p-2 shadow-xl shadow-slate-900/10"
                 >
+                  {syncState === 'local' && (
+                    <div className="mb-2 rounded-xl border border-sky-200/80 bg-sky-50/80 p-2.5 text-[11px] leading-snug text-sky-900">
+                      <p className="font-bold">Want 2-device live sync?</p>
+                      <p className="mt-0.5 text-sky-700">
+                        In Vercel → <strong>Storage</strong> → create a free{' '}
+                        <strong>Neon Postgres</strong> DB and redeploy. Both devices will share the same live ledger!
+                      </p>
+                    </div>
+                  )}
+
                   <p className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                     Database &amp; Backups
                   </p>
@@ -363,13 +513,13 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
             className="btn-shimmer relative overflow-hidden flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 px-3.5 py-2 text-xs sm:text-[13px] font-bold text-white shadow-lg shadow-emerald-500/25 cursor-pointer"
           >
             <Plus className="h-4 w-4 stroke-[2.5]" />
-            <span>Record Entry</span>
+            <span>Record</span>
           </motion.button>
         </div>
       </motion.div>
 
       {/* Mobile / Tablet Nav Pill */}
-      <div className="mt-2.5 flex lg:hidden items-center gap-1 overflow-x-auto rounded-2xl border border-slate-200/80 bg-white/85 p-1 backdrop-blur-md">
+      <div className="mt-2.5 flex xl:hidden items-center gap-1 overflow-x-auto rounded-2xl border border-slate-200/80 bg-white/85 p-1 backdrop-blur-md">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const active = activeTab === item.id;

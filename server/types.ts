@@ -13,6 +13,7 @@ export interface FinanceEntry {
   tags?: string[];
   ticker?: string;
   assetClass?: string;
+  recordedBy?: string;
   pnlTracked?: boolean;
   pnlStatus?: PnLStatus;
   currentValue?: number;
@@ -32,6 +33,7 @@ export interface DbRow {
   tags: string | null;
   ticker: string | null;
   asset_class: string | null;
+  recorded_by: string | null;
   pnl_tracked: number | boolean;
   pnl_status: string | null;
   current_value: number | string | null;

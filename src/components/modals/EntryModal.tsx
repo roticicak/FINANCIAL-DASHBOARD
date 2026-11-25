@@ -25,6 +25,8 @@ export const EntryModal: React.FC = () => {
   const {
     entries,
     currency,
+    members,
+    activeMember,
     modalOpen,
     modalMode,
     editingEntry,
@@ -45,6 +47,7 @@ export const EntryModal: React.FC = () => {
   const [date, setDate] = useState(todayISO);
   const [notes, setNotes] = useState('');
   const [ticker, setTicker] = useState('');
+  const [recordedBy, setRecordedBy] = useState(activeMember);
 
   // Optional P&L tracking on Expense / Investment creation
   const [trackPnL, setTrackPnL] = useState(false);
@@ -75,6 +78,7 @@ export const EntryModal: React.FC = () => {
       setDate(editingEntry.date);
       setNotes(editingEntry.notes || '');
       setTicker(editingEntry.ticker || '');
+      setRecordedBy(editingEntry.recordedBy || activeMember);
       setTrackPnL(Boolean(editingEntry.pnlTracked));
       setPnlStatus(
         editingEntry.pnlStatus && editingEntry.pnlStatus !== 'none'
@@ -133,6 +137,7 @@ export const EntryModal: React.FC = () => {
     setDate(new Date().toISOString().slice(0, 10));
     setNotes('');
     setTicker('');
+    setRecordedBy(activeMember);
     setOutcomeInput('');
     setPnlNote('');
     if (modalMode === 'income') {
@@ -266,6 +271,7 @@ export const EntryModal: React.FC = () => {
       notes: notes.trim() || undefined,
       ticker: tab === 'investment' && ticker.trim() ? ticker.trim().toUpperCase() : undefined,
       assetClass: tab === 'investment' ? category : undefined,
+      recordedBy: recordedBy || activeMember,
       pnlTracked: tab !== 'income' ? trackPnL : false,
       pnlStatus:
         tab !== 'income' && trackPnL ? pnlStatus : ('none' as PnLStatus),
@@ -869,17 +875,35 @@ export const EntryModal: React.FC = () => {
                     </div>
                   )}
 
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                      Notes (Optional)
-                    </label>
-                    <input
-                      type="text"
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      placeholder="Add context, payment reference, or thesis..."
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-sm text-slate-900 focus:border-emerald-400 focus:bg-white focus:outline-none"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                        Notes (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        placeholder="Add context, payment reference, or thesis..."
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-sm text-slate-900 focus:border-emerald-400 focus:bg-white focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                        Recorded By
+                      </label>
+                      <select
+                        value={recordedBy}
+                        onChange={(e) => setRecordedBy(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5 text-sm font-semibold text-slate-900 focus:border-emerald-400 focus:bg-white focus:outline-none"
+                      >
+                        {members.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </>
               )}

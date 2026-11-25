@@ -787,6 +787,11 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ onNavigate }) => {
                           <span>{item.category}</span>
                           <span>•</span>
                           <span>{formatShortDate(item.date)}</span>
+                          {item.recordedBy && (
+                            <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
+                              {item.recordedBy}
+                            </span>
+                          )}
                           {item.pnlTracked && typeof item.pnlAmount === 'number' && (
                             <span
                               className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${

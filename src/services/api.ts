@@ -86,12 +86,13 @@ export const financeApi = {
       method: 'DELETE',
     }),
 
-  getSettings: () => request<{ currency: CurrencyCode }>('/api/settings'),
+  getSettings: () =>
+    request<{ currency: CurrencyCode; members?: string[] }>('/api/settings'),
 
-  updateCurrency: (currency: CurrencyCode) =>
-    request<{ currency: CurrencyCode }>('/api/settings', {
+  updateSettings: (payload: { currency?: CurrencyCode; members?: string[] }) =>
+    request<{ currency: CurrencyCode; members: string[] }>('/api/settings', {
       method: 'PATCH',
-      body: JSON.stringify({ currency }),
+      body: JSON.stringify(payload),
     }),
 
   getJsonExportUrl: () => `${API_BASE}/api/export/json`,

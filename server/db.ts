@@ -27,6 +27,7 @@ function rowToEntry(row: DbRow): FinanceEntry {
     tags: parsedTags,
     ticker: row.ticker ?? undefined,
     assetClass: row.asset_class ?? undefined,
+    recordedBy: row.recorded_by ?? undefined,
     pnlTracked: Boolean(row.pnl_tracked),
     pnlStatus: (row.pnl_status as PnLStatus) || 'none',
     currentValue:
@@ -56,7 +57,7 @@ export interface FinanceRepository {
   setSetting(key: string, value: string): Promise<void>;
 }
 
-// ======================== SQLITE DRIVER (Dynamic import for Node 20+ compatibility) ========================
+// ======================== SQLITE DRIVER ========================
 class SqliteRepository implements FinanceRepository {
   driver: DbDriver = 'sqlite';
   persistent = true;
@@ -89,6 +90,7 @@ class SqliteRepository implements FinanceRepository {
         tags TEXT,
         ticker TEXT,
         asset_class TEXT,
+        recorded_by TEXT,
         pnl_tracked INTEGER NOT NULL DEFAULT 0,
         pnl_status TEXT DEFAULT 'none',
         current_value REAL,
@@ -108,6 +110,12 @@ class SqliteRepository implements FinanceRepository {
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
+
+    // Safe migration for existing SQLite files created before recorded_by existed
+    const cols = this.db.prepare('PRAGMA table_info(entries)').all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === 'recorded_by')) {
+      this.db.exec('ALTER TABLE entries ADD COLUMN recorded_by TEXT;');
+    }
   }
 
   async listEntries(): Promise<FinanceEntry[]> {
@@ -128,9 +136,9 @@ class SqliteRepository implements FinanceRepository {
     const stmt = this.db.prepare(`
       INSERT INTO entries (
         id, type, title, category, amount, date, notes, tags,
-        ticker, asset_class, pnl_tracked, pnl_status,
+        ticker, asset_class, recorded_by, pnl_tracked, pnl_status,
         current_value, pnl_amount, pnl_updated_at, pnl_note
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -144,6 +152,7 @@ class SqliteRepository implements FinanceRepository {
       entry.tags ? JSON.stringify(entry.tags) : null,
       entry.ticker ?? null,
       entry.assetClass ?? null,
+      entry.recordedBy ?? null,
       entry.pnlTracked ? 1 : 0,
       entry.pnlStatus ?? 'none',
       entry.currentValue ?? null,
@@ -166,7 +175,7 @@ class SqliteRepository implements FinanceRepository {
     const stmt = this.db.prepare(`
       UPDATE entries SET
         type = ?, title = ?, category = ?, amount = ?, date = ?,
-        notes = ?, tags = ?, ticker = ?, asset_class = ?,
+        notes = ?, tags = ?, ticker = ?, asset_class = ?, recorded_by = ?,
         pnl_tracked = ?, pnl_status = ?, current_value = ?,
         pnl_amount = ?, pnl_updated_at = ?, pnl_note = ?,
         updated_at = datetime('now')
@@ -183,6 +192,7 @@ class SqliteRepository implements FinanceRepository {
       merged.tags ? JSON.stringify(merged.tags) : null,
       merged.ticker ?? null,
       merged.assetClass ?? null,
+      merged.recordedBy ?? null,
       merged.pnlTracked ? 1 : 0,
       merged.pnlStatus ?? 'none',
       merged.currentValue ?? null,
@@ -232,7 +242,7 @@ class SqliteRepository implements FinanceRepository {
   }
 }
 
-// ======================== POSTGRESQL DRIVER (Vercel Neon / Supabase / Render / Railway) ========================
+// ======================== POSTGRESQL DRIVER (Shared Cloud Sync for 2+ Devices) ========================
 class PostgresRepository implements FinanceRepository {
   driver: DbDriver = 'postgres';
   persistent = true;
@@ -266,6 +276,7 @@ class PostgresRepository implements FinanceRepository {
         tags TEXT,
         ticker TEXT,
         asset_class TEXT,
+        recorded_by TEXT,
         pnl_tracked BOOLEAN NOT NULL DEFAULT FALSE,
         pnl_status TEXT DEFAULT 'none',
         current_value DOUBLE PRECISION,
@@ -275,6 +286,8 @@ class PostgresRepository implements FinanceRepository {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+
+      ALTER TABLE entries ADD COLUMN IF NOT EXISTS recorded_by TEXT;
 
       CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date DESC);
       CREATE INDEX IF NOT EXISTS idx_entries_type ON entries(type);
@@ -308,11 +321,11 @@ class PostgresRepository implements FinanceRepository {
       `
       INSERT INTO entries (
         id, type, title, category, amount, date, notes, tags,
-        ticker, asset_class, pnl_tracked, pnl_status,
+        ticker, asset_class, recorded_by, pnl_tracked, pnl_status,
         current_value, pnl_amount, pnl_updated_at, pnl_note
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8,
-        $9, $10, $11, $12, $13, $14, $15, $16
+        $9, $10, $11, $12, $13, $14, $15, $16, $17
       )
       RETURNING *
       `,
@@ -327,6 +340,7 @@ class PostgresRepository implements FinanceRepository {
         entry.tags ? JSON.stringify(entry.tags) : null,
         entry.ticker ?? null,
         entry.assetClass ?? null,
+        entry.recordedBy ?? null,
         Boolean(entry.pnlTracked),
         entry.pnlStatus ?? 'none',
         entry.currentValue ?? null,
@@ -350,11 +364,11 @@ class PostgresRepository implements FinanceRepository {
       `
       UPDATE entries SET
         type = $1, title = $2, category = $3, amount = $4, date = $5,
-        notes = $6, tags = $7, ticker = $8, asset_class = $9,
-        pnl_tracked = $10, pnl_status = $11, current_value = $12,
-        pnl_amount = $13, pnl_updated_at = $14, pnl_note = $15,
+        notes = $6, tags = $7, ticker = $8, asset_class = $9, recorded_by = $10,
+        pnl_tracked = $11, pnl_status = $12, current_value = $13,
+        pnl_amount = $14, pnl_updated_at = $15, pnl_note = $16,
         updated_at = NOW()
-      WHERE id = $16
+      WHERE id = $17
       RETURNING *
       `,
       [
@@ -367,6 +381,7 @@ class PostgresRepository implements FinanceRepository {
         merged.tags ? JSON.stringify(merged.tags) : null,
         merged.ticker ?? null,
         merged.assetClass ?? null,
+        merged.recordedBy ?? null,
         Boolean(merged.pnlTracked),
         merged.pnlStatus ?? 'none',
         merged.currentValue ?? null,
@@ -394,11 +409,11 @@ class PostgresRepository implements FinanceRepository {
           `
           INSERT INTO entries (
             id, type, title, category, amount, date, notes, tags,
-            ticker, asset_class, pnl_tracked, pnl_status,
+            ticker, asset_class, recorded_by, pnl_tracked, pnl_status,
             current_value, pnl_amount, pnl_updated_at, pnl_note
           ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8,
-            $9, $10, $11, $12, $13, $14, $15, $16
+            $9, $10, $11, $12, $13, $14, $15, $16, $17
           )
           `,
           [
@@ -412,6 +427,7 @@ class PostgresRepository implements FinanceRepository {
             entry.tags ? JSON.stringify(entry.tags) : null,
             entry.ticker ?? null,
             entry.assetClass ?? null,
+            entry.recordedBy ?? null,
             Boolean(entry.pnlTracked),
             entry.pnlStatus ?? 'none',
             entry.currentValue ?? null,
@@ -493,8 +509,6 @@ export function createRepository(): FinanceRepository {
     return new PostgresRepository(databaseUrl);
   }
 
-  // On Vercel serverless without a Postgres URL configured yet, avoid EROFS crashes
-  // and signal the frontend to seamlessly persist in browser localStorage until Postgres is attached.
   if (process.env.VERCEL === '1') {
     return new UnconfiguredServerlessRepository();
   }

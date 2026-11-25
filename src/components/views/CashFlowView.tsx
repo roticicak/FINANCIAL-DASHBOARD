@@ -277,6 +277,11 @@ export const CashFlowView: React.FC = () => {
                             <p className="font-bold text-sm text-slate-900 truncate">
                               {item.title}
                             </p>
+                            {item.recordedBy && (
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 border border-slate-200/70">
+                                {item.recordedBy}
+                              </span>
+                            )}
                             {item.pnlTracked && typeof item.pnlAmount === 'number' && (
                               <span
                                 className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${

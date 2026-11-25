@@ -100,6 +100,10 @@ function validateEntryPayload(body: Record<string, unknown>): {
         typeof body.assetClass === 'string' && body.assetClass.trim()
           ? body.assetClass.trim()
           : undefined,
+      recordedBy:
+        typeof body.recordedBy === 'string' && body.recordedBy.trim()
+          ? body.recordedBy.trim().slice(0, 32)
+          : undefined,
       pnlTracked,
       pnlStatus,
       currentValue:
@@ -292,10 +296,24 @@ app.delete('/api/entries', async (_req: Request, res: Response) => {
   }
 });
 
+const DEFAULT_MEMBERS = ['Person 1', 'Person 2'];
+
 app.get('/api/settings', async (_req: Request, res: Response) => {
   try {
     const currency = (await repo.getSetting('currency')) || 'USD';
-    res.json({ currency });
+    const rawMembers = await repo.getSetting('members');
+    let members = DEFAULT_MEMBERS;
+    if (rawMembers) {
+      try {
+        const parsed = JSON.parse(rawMembers);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          members = parsed.map((m) => String(m).trim()).filter(Boolean);
+        }
+      } catch {
+        members = DEFAULT_MEMBERS;
+      }
+    }
+    res.json({ currency, members });
   } catch (err) {
     console.error('GET /api/settings failed:', err);
     res.status(500).json({ error: 'Failed to load settings' });
@@ -304,13 +322,42 @@ app.get('/api/settings', async (_req: Request, res: Response) => {
 
 app.patch('/api/settings', async (req: Request, res: Response) => {
   try {
-    const currency = req.body?.currency as CurrencyCode;
-    if (!VALID_CURRENCIES.includes(currency)) {
-      res.status(400).json({ error: 'Unsupported currency code.' });
-      return;
+    let savedCurrency = (await repo.getSetting('currency')) || 'USD';
+    if (req.body?.currency !== undefined) {
+      const currency = req.body.currency as CurrencyCode;
+      if (!VALID_CURRENCIES.includes(currency)) {
+        res.status(400).json({ error: 'Unsupported currency code.' });
+        return;
+      }
+      await repo.setSetting('currency', currency);
+      savedCurrency = currency;
     }
-    await repo.setSetting('currency', currency);
-    res.json({ currency });
+
+    let savedMembers = DEFAULT_MEMBERS;
+    const existingRaw = await repo.getSetting('members');
+    if (existingRaw) {
+      try {
+        const parsed = JSON.parse(existingRaw);
+        if (Array.isArray(parsed) && parsed.length > 0) savedMembers = parsed;
+      } catch {
+        // ignore
+      }
+    }
+
+    if (Array.isArray(req.body?.members)) {
+      const cleaned = req.body.members
+        .map((m: unknown) => (typeof m === 'string' ? m.trim().slice(0, 32) : ''))
+        .filter(Boolean)
+        .slice(0, 6);
+      if (cleaned.length === 0) {
+        res.status(400).json({ error: 'At least one member name is required.' });
+        return;
+      }
+      await repo.setSetting('members', JSON.stringify(cleaned));
+      savedMembers = cleaned;
+    }
+
+    res.json({ currency: savedCurrency, members: savedMembers });
   } catch (err) {
     console.error('PATCH /api/settings failed:', err);
     res.status(500).json({ error: 'Failed to save settings' });

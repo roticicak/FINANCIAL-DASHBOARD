@@ -32,6 +32,8 @@ export interface FinanceEntry {
   // Investment-specific fields
   ticker?: string;
   assetClass?: string;
+  // Multi-user attribution (e.g., Person 1 / Person 2)
+  recordedBy?: string;
   // Profit & Loss tracking (works for BOTH expenses and investments!)
   // If pnlTracked is true:
   //   - currentOrExitValue represents the recovered/current/exit value (optional if pnlAmount is set directly)
