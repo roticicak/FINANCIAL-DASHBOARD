@@ -27,7 +27,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export interface HealthResponse {
   ok: boolean;
-  driver: 'sqlite' | 'postgres';
+  driver: 'sqlite' | 'postgres' | 'none';
+  persistent: boolean;
   entryCount: number;
   timestamp: string;
 }
@@ -35,7 +36,8 @@ export interface HealthResponse {
 export const financeApi = {
   health: () => request<HealthResponse>('/api/health'),
 
-  listEntries: () => request<{ entries: FinanceEntry[] }>('/api/entries'),
+  listEntries: () =>
+    request<{ entries: FinanceEntry[]; persistent?: boolean }>('/api/entries'),
 
   createEntry: (entry: Omit<FinanceEntry, 'id'>) =>
     request<{ entry: FinanceEntry }>('/api/entries', {

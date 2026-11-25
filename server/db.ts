@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { Pool } from 'pg';
 import { DbRow, EntryType, FinanceEntry, PnLStatus } from './types.js';
+
+export type DbDriver = 'sqlite' | 'postgres' | 'none';
 
 function rowToEntry(row: DbRow): FinanceEntry {
   let parsedTags: string[] | undefined;
@@ -42,7 +43,8 @@ function rowToEntry(row: DbRow): FinanceEntry {
 }
 
 export interface FinanceRepository {
-  driver: 'sqlite' | 'postgres';
+  driver: DbDriver;
+  persistent: boolean;
   init(): Promise<void>;
   listEntries(): Promise<FinanceEntry[]>;
   getEntry(id: string): Promise<FinanceEntry | null>;
@@ -54,20 +56,27 @@ export interface FinanceRepository {
   setSetting(key: string, value: string): Promise<void>;
 }
 
-// ======================== SQLITE DRIVER (Built-in node:sqlite) ========================
+// ======================== SQLITE DRIVER (Dynamic import for Node 20+ compatibility) ========================
 class SqliteRepository implements FinanceRepository {
-  driver: 'sqlite' = 'sqlite';
-  private db: DatabaseSync;
+  driver: DbDriver = 'sqlite';
+  persistent = true;
+  private dbPath: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private db: any = null;
 
   constructor(dbPath: string) {
-    const resolved = path.resolve(dbPath);
+    this.dbPath = dbPath;
+  }
+
+  async init(): Promise<void> {
+    if (this.db) return;
+    const { DatabaseSync } = await import('node:sqlite');
+    const resolved = path.resolve(this.dbPath);
     fs.mkdirSync(path.dirname(resolved), { recursive: true });
     this.db = new DatabaseSync(resolved);
     this.db.exec('PRAGMA journal_mode = WAL;');
     this.db.exec('PRAGMA foreign_keys = ON;');
-  }
 
-  async init(): Promise<void> {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS entries (
         id TEXT PRIMARY KEY,
@@ -223,10 +232,12 @@ class SqliteRepository implements FinanceRepository {
   }
 }
 
-// ======================== POSTGRESQL DRIVER (Cloud Deployments) ========================
+// ======================== POSTGRESQL DRIVER (Vercel Neon / Supabase / Render / Railway) ========================
 class PostgresRepository implements FinanceRepository {
-  driver: 'postgres' = 'postgres';
+  driver: DbDriver = 'postgres';
+  persistent = true;
   private pool: Pool;
+  private initialized = false;
 
   constructor(connectionString: string) {
     const isLocal =
@@ -237,10 +248,12 @@ class PostgresRepository implements FinanceRepository {
     this.pool = new Pool({
       connectionString,
       ssl: isLocal ? false : { rejectUnauthorized: false },
+      max: 5,
     });
   }
 
   async init(): Promise<void> {
+    if (this.initialized) return;
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS entries (
         id TEXT PRIMARY KEY,
@@ -272,6 +285,7 @@ class PostgresRepository implements FinanceRepository {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);
+    this.initialized = true;
   }
 
   async listEntries(): Promise<FinanceEntry[]> {
@@ -437,11 +451,54 @@ class PostgresRepository implements FinanceRepository {
   }
 }
 
+// ======================== SERVERLESS FALLBACK (Vercel without DATABASE_URL yet) ========================
+class UnconfiguredServerlessRepository implements FinanceRepository {
+  driver: DbDriver = 'none';
+  persistent = false;
+  async init(): Promise<void> {}
+  async listEntries(): Promise<FinanceEntry[]> {
+    return [];
+  }
+  async getEntry(): Promise<FinanceEntry | null> {
+    return null;
+  }
+  async createEntry(entry: FinanceEntry): Promise<FinanceEntry> {
+    return entry;
+  }
+  async updateEntry(): Promise<FinanceEntry | null> {
+    return null;
+  }
+  async deleteEntry(): Promise<boolean> {
+    return true;
+  }
+  async replaceAllEntries(entries: FinanceEntry[]): Promise<FinanceEntry[]> {
+    return entries;
+  }
+  async getSetting(): Promise<string | null> {
+    return null;
+  }
+  async setSetting(): Promise<void> {}
+}
+
 export function createRepository(): FinanceRepository {
-  const databaseUrl = process.env.DATABASE_URL?.trim();
+  const databaseUrl = (
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRES_PRISMA_URL ||
+    process.env.NEON_DATABASE_URL ||
+    ''
+  ).trim();
+
   if (databaseUrl) {
     return new PostgresRepository(databaseUrl);
   }
+
+  // On Vercel serverless without a Postgres URL configured yet, avoid EROFS crashes
+  // and signal the frontend to seamlessly persist in browser localStorage until Postgres is attached.
+  if (process.env.VERCEL === '1') {
+    return new UnconfiguredServerlessRepository();
+  }
+
   const sqlitePath = process.env.SQLITE_PATH?.trim() || './data/verdant.sqlite';
   return new SqliteRepository(sqlitePath);
 }

@@ -19,7 +19,6 @@ import {
 } from 'lucide-react';
 import { ActiveTab, CURRENCIES, CurrencyCode } from '../../types/finance';
 import { useFinance } from '../../context/FinanceContext';
-import { financeApi } from '../../services/api';
 import { exportEntriesToCSV } from '../../utils/finance';
 
 interface FloatingHeaderProps {
@@ -98,19 +97,23 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
         dot: 'bg-amber-400 animate-pulse',
         text: syncState === 'loading' ? 'Connecting...' : 'Saving...',
         cls: 'bg-amber-50 text-amber-700 border-amber-200/80',
+        title: 'Syncing with database',
       };
     }
-    if (syncState === 'offline') {
+    if (syncState === 'local') {
       return {
-        dot: 'bg-rose-500',
-        text: 'API Offline',
-        cls: 'bg-rose-50 text-rose-700 border-rose-200/80',
+        dot: 'bg-sky-500',
+        text: 'Local Saved',
+        cls: 'bg-sky-50 text-sky-700 border-sky-200/80',
+        title:
+          'Saved in your browser. Add Neon/Supabase Postgres in Vercel Storage to sync across devices.',
       };
     }
     return {
       dot: 'bg-emerald-500',
       text: dbDriver === 'postgres' ? 'PostgreSQL' : 'SQLite DB',
       cls: 'bg-emerald-50 text-emerald-700 border-emerald-200/80',
+      title: 'Live cloud/server database persistence active',
     };
   })();
 
@@ -145,7 +148,7 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
                   Verdant
                 </span>
                 <span
-                  title="Live database persistence status"
+                  title={syncBadge.title}
                   className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-bold tracking-tight ${syncBadge.cls}`}
                 >
                   <Database className="h-2.5 w-2.5" />
@@ -285,14 +288,36 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
                     <Download className="h-3.5 w-3.5" />
                     Export Full Ledger (CSV)
                   </button>
-                  <a
-                    href={financeApi.getJsonExportUrl()}
-                    onClick={() => setMenuOpen(false)}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const payload = JSON.stringify(
+                        {
+                          exportedAt: new Date().toISOString(),
+                          currency,
+                          entries,
+                        },
+                        null,
+                        2
+                      );
+                      const blob = new Blob([payload], {
+                        type: 'application/json',
+                      });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `verdant-backup-${new Date()
+                        .toISOString()
+                        .slice(0, 10)}.json`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                      setMenuOpen(false);
+                    }}
                     className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors cursor-pointer"
                   >
                     <FileJson className="h-3.5 w-3.5" />
-                    Download DB Backup (JSON)
-                  </a>
+                    Download Backup (JSON)
+                  </button>
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
