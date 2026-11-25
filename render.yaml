@@ -1,0 +1,19 @@
+# One-click Render.com Blueprint (Web Service + Managed PostgreSQL)
+services:
+  - type: web
+    name: verdant-financial-dashboard
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: verdant-postgres
+          property: connectionString
+
+databases:
+  - name: verdant-postgres
+    plan: free
